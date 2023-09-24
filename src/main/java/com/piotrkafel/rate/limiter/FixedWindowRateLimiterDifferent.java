@@ -4,67 +4,54 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
+// T can be any class as long as we can use it for HashMap lookup
+// (proper implementation of equals and hashCode is required).
 public class FixedWindowRateLimiterDifferent<T> {
 
-    private final int windowMaxSize;
-    private final Map<T, Window> store = new ConcurrentHashMap<>();
-    private final long windowSizeInMillies;
+    private final int windowMaxCapacity;
+    private final long windowSizeInNanos;
 
-    public FixedWindowRateLimiterDifferent(int windowMaxSize, long timeValue, TimeUnit timeUnit) {
-        if(windowMaxSize < 1) throw new IllegalArgumentException("Window size cannot be smaller than 1");
-        this.windowMaxSize = windowMaxSize;
-        this.windowSizeInMillies = timeUnit.toMillis(timeValue);
+    // For this approach to work we need to use ConcurrentHashMap instead of simple HashMap.
+    private final Map<T, Window> store = new ConcurrentHashMap<>();
+
+    public FixedWindowRateLimiterDifferent(int windowMaxCapacity, long timeValue, TimeUnit timeUnit) {
+        if(windowMaxCapacity < 1) throw new IllegalArgumentException("Window size cannot be smaller than 1");
+        this.windowMaxCapacity = windowMaxCapacity;
+        this.windowSizeInNanos = timeUnit.toNanos(timeValue);
     }
 
     public boolean handleRequest(T key) {
-        // for now I assume System.currentTimeMillis() returns monotonic clock (even though it does not)
-        final long currentTimeMillis = System.currentTimeMillis();
-        final Window window = store.computeIfAbsent(key, k -> new Window(currentTimeMillis));
+        // Its important to use nanoTime since this is monotonic clock.
+        // With toMillis we can observe time going backward.
+        final long currentTimeNanos = System.nanoTime();
+        // Alternative to using ConcurrentHashMap.computeIfAbsent would be to have a synchronized method that
+        // for a given key returns window.
+        final Window window = store.computeIfAbsent(key, k -> new Window(currentTimeNanos));
 
-        // synchronizing on window for better performance (instead of on the method)
+        // Intuition about the performance: using this approach for workload with hot key thats requested 99% of the time
+        // will result in worse performance in comparison to synchronization on the method level. Thats because we need
+        // to acquire two locks instead of one. However, if the keys are evenly distributed the performance should be
+        // significantly better as we synchronize threads on window objects.
         synchronized (window) {
-            // check if we are in another window
-            if(currentTimeMillis - window.getBeginOfWindowInMillis() > windowSizeInMillies) {
-                // reset to new window
-                window.resetWindowWithNewBegin(currentTimeMillis, 1);
+            // Check if we are in another window. If so lets reset the window.
+            if(currentTimeNanos - window.getBeginOfWindowInNanos() > windowSizeInNanos) {
+                // This implementation assumes we do not need to have windows exactly next to each other.
+                // The only thing it will ensure is that the windows will be of the fixed size.
+                // If it is an requirement that windows should be adjacent then we can iterate
+                // over start of each window by adding windowSizeInNanos until we find first thats
+                // bigger than currentTimeNanos. Subtract from it windowSizeInNanos will give you start of
+                // current window.
+                window.resetWindowWithNewBegin(currentTimeNanos, 1);
                 return true;
             }
 
-            // check if number of requests + 1 is below threshold
-            if(window.getNumberOfRequests() + 1 <= windowMaxSize) {
+            // Check if number of requests + 1 is below max allowed window capacity.
+            if(window.getNumberOfRequests() + 1 <= windowMaxCapacity) {
                 window.increaseNumberOfRequests();
                 return true;
             }
 
             return false;
-        }
-    }
-
-    public class Window {
-
-        private int numberOfRequests;
-
-        private long beginOfWindowInMillis;
-
-        public Window(long beginOfWindowInMillis) {
-            resetWindowWithNewBegin(beginOfWindowInMillis, 0);
-        }
-
-        public int getNumberOfRequests() {
-            return numberOfRequests;
-        }
-
-        public long getBeginOfWindowInMillis() {
-            return beginOfWindowInMillis;
-        }
-
-        public void resetWindowWithNewBegin(long beginOfWindowInMillis, int numberOfRequests) {
-            this.beginOfWindowInMillis = beginOfWindowInMillis;
-            this.numberOfRequests = numberOfRequests;
-        }
-
-        public void increaseNumberOfRequests() {
-            this.numberOfRequests++;
         }
     }
 }
