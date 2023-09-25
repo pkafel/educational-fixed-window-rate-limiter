@@ -9,21 +9,25 @@ import java.util.concurrent.TimeUnit;
 public class FixedWindowRateLimiterDifferent<T> {
 
     private final int windowMaxCapacity;
+
     private final long windowSizeInNanos;
+
+    private final IClock clock;
 
     // For this approach to work we need to use ConcurrentHashMap instead of simple HashMap.
     private final Map<T, Window> store = new ConcurrentHashMap<>();
 
-    public FixedWindowRateLimiterDifferent(int windowMaxCapacity, long timeValue, TimeUnit timeUnit) {
+    public FixedWindowRateLimiterDifferent(int windowMaxCapacity, long timeValue, TimeUnit timeUnit, IClock clock) {
         if(windowMaxCapacity < 1) throw new IllegalArgumentException("Window size cannot be smaller than 1");
         this.windowMaxCapacity = windowMaxCapacity;
         this.windowSizeInNanos = timeUnit.toNanos(timeValue);
+        this.clock = clock;
     }
 
     public boolean handleRequest(T key) {
-        // Its important to use nanoTime since this is monotonic clock.
-        // With toMillis we can observe time going backward.
-        final long currentTimeNanos = System.nanoTime();
+        // Its important to use monotonic clock here. System.currentTimeMillis is not recommended as with it  we can
+        // observe time going backward.
+        final long currentTimeNanos = clock.nanoTime();
         // Alternative to using ConcurrentHashMap.computeIfAbsent would be to have a synchronized method that
         // for a given key returns window.
         final Window window = store.computeIfAbsent(key, k -> new Window(currentTimeNanos));

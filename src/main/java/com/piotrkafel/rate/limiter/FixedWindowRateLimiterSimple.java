@@ -4,6 +4,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+// T can be any class as long as we can use it for HashMap lookup
+// (proper implementation of equals and hashCode is required).
 public class FixedWindowRateLimiterSimple<T> {
 
     private final int windowMaxCapacity;
@@ -30,6 +32,12 @@ public class FixedWindowRateLimiterSimple<T> {
 
         // Check if we are in another window. If so lets reset the window.
         if(currentTimeNanos - window.getBeginOfWindowInNanos() > windowSizeInNanos) {
+            // This implementation assumes we do not need to have windows exactly next to each other.
+            // The only thing it will ensure is that the windows will be of the fixed size.
+            // If it is an requirement that windows should be adjacent then we can iterate
+            // over start of each window by adding windowSizeInNanos until we find first thats
+            // bigger than currentTimeNanos. Subtract from it windowSizeInNanos will give you start of
+            // current window.
             window.resetWindowWithNewBegin(currentTimeNanos, 1);
             return true;
         }
