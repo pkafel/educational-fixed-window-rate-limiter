@@ -10,6 +10,7 @@ This repository contains 2 implementation which can help you better understand h
 Rate limiter is a topic that often shows up on interview questions. Companies like Atlassian ask candidates to implement rate limiters during coding interview. The implementation here are good enough that they should pass them.
 
 Beside implementation, interviewers often want to discuss relevant topics during interview. Here is a list of things you need to be prepared for:
+* Different types of rate limiting algorithms
 * Monotonic vs non-monotonic clocks
 * Threads synchronization and different type of locks
 * Thread-safe data structures
